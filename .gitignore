@@ -1,0 +1,9 @@
+# Runtime logs (generated beside the script on first run)
+logs/
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+*.swp
+.vs/
+.vscode/

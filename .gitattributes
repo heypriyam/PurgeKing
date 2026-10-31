@@ -1,0 +1,6 @@
+# Batch files MUST use CRLF. CMD's goto/call label search breaks on LF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Docs use LF.
+*.md  text eol=lf
