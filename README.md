@@ -17,20 +17,20 @@ Platform: **Windows 10 / 11**.
 
 ## ⚠️ Release status — read this
 
-This is tagged **v1.0.0**, but the full module set from the design spec is being delivered in phases. **Three modules are live; six are stubs** that print "coming in a later phase" and delete nothing.
+The full module set from the design spec is being delivered in phases. As of **v1.1.0, seven modules are live; two are stubs** (Deep Cleanup and Run Everything, which are presets planned for the next release).
 
 | Menu | Module | Status |
 |------|--------|--------|
 | `[1]` | Quick Cleanup (user `%TEMP%`) | ✅ **Implemented** |
+| `[3]` | Windows Cleanup (Update download cache, admin) | ✅ **Implemented** |
+| `[4]` | NVIDIA / GPU Cleanup (shader caches) | ✅ **Implemented** |
+| `[5]` | Browser Cleanup (cache-only) | ✅ **Implemented** |
+| `[6]` | Developer Cleanup (npm/pip caches) | ✅ **Implemented** |
 | `[7]` | Analyze System Junk (read-only) | ✅ **Implemented** |
 | `[8]` | System Health Report | ✅ **Implemented** |
 | `[T]` | Safety Self-Test | ✅ **Implemented** |
-| `[2]` | Deep Cleanup | 🔜 Planned |
-| `[3]` | Windows Cleanup | 🔜 Planned |
-| `[4]` | NVIDIA / GPU Cleanup | 🔜 Planned |
-| `[5]` | Browser Cleanup | 🔜 Planned |
-| `[6]` | Developer Cleanup | 🔜 Planned |
-| `[9]` | Run Everything | 🔜 Planned |
+| `[2]` | Deep Cleanup (preset) | 🔜 Planned |
+| `[9]` | Run Everything (preset) | 🔜 Planned |
 
 The entire **safety framework** (path validation, protected-path rejection, reparse-point policy, safe-delete, confirmation, logging) is complete and self-tested — so the planned modules plug into a proven foundation.
 
@@ -46,6 +46,10 @@ PurgeKing.bat            :: interactive menu
 PurgeKing.bat /analyze   :: read-only preview, deletes nothing
 PurgeKing.bat /report    :: local system health snapshot
 PurgeKing.bat /quick     :: clean user temp (asks to confirm first)
+PurgeKing.bat /gpu       :: NVIDIA/GPU shader cache cleanup
+PurgeKing.bat /browser   :: Chrome/Edge/Firefox cache (cache only)
+PurgeKing.bat /python    :: developer caches (npm/pip, native commands)
+PurgeKing.bat /windows   :: Windows Update download cache (needs admin)
 PurgeKing.bat /selftest  :: run the safety-framework self-test
 PurgeKing.bat /help       :: usage and safety info
 ```
@@ -63,6 +67,18 @@ Removes disposable files from your **per-user temp folder** (`%TEMP%`). Files th
 
 ### Analyze System Junk `[7]` / `/analyze`
 **Read-only.** Validates each approved target, reports whether it exists, counts eligible files, and flags any junction/symlink. Deletes, moves, and modifies nothing.
+
+### Windows Cleanup `[3]` / `/windows`
+Clears leftover Windows Update download files under `%SystemRoot%\SoftwareDistribution\Download`. **Requires administrator rights.** Never deletes `SoftwareDistribution` itself, stops a service, or touches `WinSxS`/`System32`/`Installer`/`DriverStore`. Files in use (e.g. during active servicing) are skipped — retry later.
+
+### NVIDIA / GPU Cleanup `[4]` / `/gpu`
+Clears disposable GPU shader caches: NVIDIA `DXCache`/`GLCache`/`NV_Cache` and the Windows DirectX shader cache (`D3DSCache`). The installed driver is never touched. Shaders rebuild automatically; the first launch of some games/apps may stutter briefly. (AMD/Intel not targeted in this build.)
+
+### Browser Cleanup `[5]` / `/browser`
+Removes **cache-only** folders (`Cache`, `Code Cache`, `GPUCache`, Firefox `cache2`) across detected profiles for Chrome, Edge, and Firefox. Bookmarks, passwords, cookies, history, sessions, and profiles are never touched. Detects running browsers and warns that locked files will be skipped — close the browser first for a complete clean. Opt-in per browser.
+
+### Developer Cleanup `[6]` / `/python`
+Uses each tool's **own** cache command — `npm cache clean --force`, `pip cache purge` — for detected tools, confirmed individually. Never deletes source code, virtual environments, `node_modules`, builds, or project folders. (`__pycache__`/per-project caches are out of scope for automated cleaning.)
 
 ### System Health Report `[8]` / `/report`
 A local snapshot: PurgeKing version, Windows build, elevation state, system-drive free space, detected browsers (Chrome/Edge/Firefox) and developer tools (Python/npm/pip), and the latest log path. Collects no serial numbers, account IDs, or personal file names. Never uploaded.

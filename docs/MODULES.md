@@ -1,6 +1,6 @@
 # PurgeKing — Modules
 
-## Implemented (v1.0.0)
+## Implemented (v1.1.0)
 
 ### Quick Cleanup — `[1]` / `/quick`
 - **Target:** current user's `%TEMP%`, validated under `%LOCALAPPDATA%`.
@@ -13,21 +13,35 @@
 - **Read-only.** Validates each approved target, reports existence, exact eligible file count, and reparse status. Deletes nothing.
 - Sizes are reported as `unavailable` rather than risk a wrong total (see ARCHITECTURE "Design choices").
 
+### Windows Cleanup — `[3]` / `/windows`
+- **Target:** `%SystemRoot%\SoftwareDistribution\Download` (contents only).
+- **Requires administrator.** Without elevation the module explains and exits.
+- Purpose-built routine (`:CleanWUCache`), not the generic safe-delete — because the generic helper refuses everything under `%SystemRoot%` by design. Uses a hardcoded path plus a suffix sanity check, a reparse-point check, and locked-file skipping. Never deletes `SoftwareDistribution` itself, stops a service, or touches `WinSxS`/`System32`/`Installer`/`DriverStore`.
+- If files are locked (active servicing), they are skipped with a "retry later" note.
+
+### NVIDIA / GPU Cleanup — `[4]` / `/gpu`
+- **Targets:** `%LOCALAPPDATA%\NVIDIA\DXCache`, `\NVIDIA\GLCache`, `\NVIDIA Corporation\NV_Cache`, `\D3DSCache` (Windows DirectX shader cache), all validated under `%LOCALAPPDATA%`.
+- Driver is never touched. Warns that shaders rebuild and first launch may stutter. AMD/Intel not claimed.
+
+### Browser Cleanup — `[5]` / `/browser`
+- **Targets:** per-profile `Cache`, `Code Cache`, `GPUCache` under Chrome/Edge `User Data`, and Firefox `cache2`, validated under each browser's root.
+- Enumerates profile folders dynamically. Never touches profiles, bookmarks, passwords, cookies, history, or sessions. Detects running processes (`tasklist`) and warns; never force-closes. Opt-in per browser.
+
+### Developer Cleanup — `[6]` / `/python`
+- Runs each tool's **own** command — `npm cache clean --force`, `pip cache purge` — for detected tools, confirmed individually, with the exact command shown first.
+- Never deletes source, `.venv`/`venv`, `node_modules`, builds, or Docker data. `__pycache__`/per-project caches are out of scope for automated cleaning.
+
 ### System Health Report — `[8]` / `/report`
 - Local snapshot: version, Windows build, elevation, system-drive free space (via `dir`, no elevation needed), detected browsers and dev tools, latest log path.
 - No serial numbers, account identifiers, or personal file names collected. Never uploaded.
 
 ## Planned
 
-Each requires its own target review and test cases before shipping.
+Each is a preset built on the modules above, not a new deletion engine.
 
 | Module | Scope sketch | Key constraints |
 |--------|--------------|-----------------|
-| Windows Cleanup `[3]` | Windows Update download leftovers (cautious) | Never delete `SoftwareDistribution` wholesale, `WinSxS`, or servicing metadata. Use native servicing commands where needed, clearly labelled. |
-| NVIDIA / GPU Cleanup `[4]` | DirectX / DXCache / GLCache shader caches | Never touch the installed driver or `DriverStore`. Clean cache contents, warn about first-run shader rebuild. |
-| Browser Cleanup `[5]` | Cache-only folders for Chrome / Edge / Firefox | Never delete profiles, bookmarks, passwords, cookies, history. Recommend closing the browser; never force-close. Opt-in. |
-| Developer Cleanup `[6]` | `__pycache__`, pip/npm caches via native commands | Never delete source, `.venv`/`venv`, `node_modules`, builds, or Docker data. Prefer native cache commands. Opt-in. |
-| Deep Cleanup `[2]` | Curated preset calling the above in order | Shows included modules first; user can deselect; never silently expands scope. |
+| Deep Cleanup `[2]` | Curated preset calling selected modules in order | Shows included modules first; user can deselect; never silently expands scope. |
 | Run Everything `[9]` | Runs the user's selected modules | Shows selection + estimate, confirms, allows cancel between modules. |
 
 ## Checklist for every new target

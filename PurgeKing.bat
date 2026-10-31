@@ -9,7 +9,7 @@ rem =====================================================
 
 rem ----- [01] CONSTANTS AND CONFIGURATION --------------
 set "APP_NAME=PurgeKing"
-set "APP_VERSION=1.0.0"
+set "APP_VERSION=1.1.0"
 set "LOG_RETENTION_DAYS=7"
 set "DEFAULT_PREVIEW_REQUIRED=1"
 rem Feature toggles reserved for Phase 3+ modules (not yet active).
@@ -47,15 +47,15 @@ echo                WINDOWS MAINTENANCE TOOLKIT
 echo ========================================================
 echo   Windows: %WIN_CAPTION% (build %WIN_BUILD%)
 echo   Version: %APP_VERSION%                 Admin: %IS_ADMIN%
-echo   Mode: SAFE   (Phase 3 - temp cleanup, analysis, report)
+echo   Mode: SAFE
 echo --------------------------------------------------------
 echo.
 echo   [1] Quick Cleanup            (user temporary files)
 echo   [2] Deep Cleanup             (coming in Phase 5)
-echo   [3] Windows Cleanup          (coming in Phase 4)
-echo   [4] NVIDIA / GPU Cleanup     (coming in Phase 4)
-echo   [5] Browser Cleanup          (coming in Phase 4)
-echo   [6] Developer Cleanup        (coming in Phase 4)
+echo   [3] Windows Cleanup          (Update cache; needs admin)
+echo   [4] NVIDIA / GPU Cleanup     (shader caches)
+echo   [5] Browser Cleanup          (cache only)
+echo   [6] Developer Cleanup        (npm/pip caches)
 echo.
 echo --------------------------------------------------------
 echo   [7] Analyze System Junk      (read-only preview)
@@ -75,10 +75,10 @@ if not defined CHOICE goto :MainMenu
 if /i "%CHOICE%"=="0" goto :Exit
 if /i "%CHOICE%"=="1" ( call :QuickCleanup & pause & goto :MainMenu )
 if /i "%CHOICE%"=="2" ( call :ModuleStub "Deep Cleanup" "Phase 5" & goto :MainMenu )
-if /i "%CHOICE%"=="3" ( call :ModuleStub "Windows Cleanup" "Phase 4" & goto :MainMenu )
-if /i "%CHOICE%"=="4" ( call :ModuleStub "NVIDIA / GPU Cleanup" "Phase 4" & goto :MainMenu )
-if /i "%CHOICE%"=="5" ( call :ModuleStub "Browser Cleanup" "Phase 4" & goto :MainMenu )
-if /i "%CHOICE%"=="6" ( call :ModuleStub "Developer Cleanup" "Phase 4" & goto :MainMenu )
+if /i "%CHOICE%"=="3" ( call :WindowsCleanup & pause & goto :MainMenu )
+if /i "%CHOICE%"=="4" ( call :GPUCleanup & pause & goto :MainMenu )
+if /i "%CHOICE%"=="5" ( call :BrowserCleanup & pause & goto :MainMenu )
+if /i "%CHOICE%"=="6" ( call :DeveloperCleanup & pause & goto :MainMenu )
 if /i "%CHOICE%"=="7" ( call :AnalyzeSystemJunk & pause & goto :MainMenu )
 if /i "%CHOICE%"=="8" ( call :SystemReport & pause & goto :MainMenu )
 if /i "%CHOICE%"=="9" ( call :ModuleStub "Run Everything" "Phase 5" & goto :MainMenu )
@@ -102,9 +102,13 @@ rem Phase 3 actions. /quick is destructive, so it still confirms inside.
 if /i "%arg%"=="/quick"   ( call :QuickCleanup & exit /b 0 )
 if /i "%arg%"=="/analyze" ( call :AnalyzeSystemJunk & exit /b 0 )
 if /i "%arg%"=="/report"  ( call :SystemReport & exit /b 0 )
+if /i "%arg%"=="/gpu"     ( call :GPUCleanup & exit /b 0 )
+if /i "%arg%"=="/browser" ( call :BrowserCleanup & exit /b 0 )
+if /i "%arg%"=="/python"  ( call :DeveloperCleanup & exit /b 0 )
+if /i "%arg%"=="/windows" ( call :WindowsCleanup & exit /b 0 )
 rem Remaining module switches: refuse until the module exists.
 rem Never treat an argument as permission to delete.
-for %%S in (/deep /browser /python /gpu /everything) do (
+for %%S in (/deep /everything) do (
     if /i "%arg%"=="%%S" (
         echo %APP_NAME%: "%arg%" is not available yet ^(cleanup modules arrive in Phase 3+^).
         call :Log INFO "CLI switch %arg% requested but module not implemented."
@@ -421,10 +425,13 @@ echo   Command-line switches:
 echo     /help       Show this screen
 echo     /selftest   Run the safety-framework self-test
 echo     /quick      Quick Cleanup of user temp (asks to confirm)
+echo     /gpu        NVIDIA/GPU shader cache cleanup
+echo     /browser    Browser cache cleanup (Chrome/Edge/Firefox)
+echo     /python     Developer cache cleanup (npm/pip)
+echo     /windows    Windows Update download cache (needs admin)
 echo     /analyze    Read-only preview of approved targets
 echo     /report     System health report
-echo     /deep /browser /python /gpu /everything
-echo                 (accepted but refuse until implemented)
+echo     /deep /everything  (accepted but refuse until implemented)
 echo.
 echo   Safety rules enforced now:
 echo     - Empty paths, drive roots, and UNC paths are rejected.
@@ -574,6 +581,293 @@ exit /b 0
 rem %1 = label, %2 = executable to probe with 'where'.
 where %2 >nul 2>&1
 if errorlevel 1 ( echo   %~1 : not found ) else ( echo   %~1 : present )
+exit /b 0
+
+
+rem ----- Phase 4 shared helpers ------------------------
+:DelAndTally
+rem %1 = target, %2 = allowlisted parent. Cleans and adds to module totals.
+call :SafeDeleteContents "%~1" "%~2"
+set /a MOD_DELETED+=SD_DELETED
+set /a MOD_SKIPPED+=SD_REMAINING
+exit /b 0
+
+:CountAndTally
+rem %1 = target. Read-only; adds eligible file count to MOD_FILES.
+call :CountFiles "%~1"
+set /a MOD_FILES+=CF_COUNT
+exit /b 0
+
+:ProcRunning
+rem %1 = image name (e.g. chrome.exe). Sets PROC_RUNNING=1 if running.
+set "PROC_RUNNING=0"
+tasklist /fi "imagename eq %~1" /nh 2>nul | find /i "%~1" >nul 2>&1
+if not errorlevel 1 set "PROC_RUNNING=1"
+exit /b 0
+
+
+rem ----- [11] GPU CLEANUP ------------------------------
+:GPUCleanup
+cls
+echo ========================================================
+echo   NVIDIA / GPU Shader Cache Cleanup
+echo ========================================================
+echo.
+echo   Clears disposable GPU shader caches. Supported here:
+echo     NVIDIA DXCache / GLCache / NV_Cache
+echo     Windows DirectX shader cache (D3DSCache)
+echo   AMD and Intel caches are not targeted in this build.
+echo.
+echo   The installed graphics driver is NEVER touched. Shaders
+echo   are rebuilt automatically; the first launch of some
+echo   games or apps may stutter briefly afterwards.
+echo.
+set "MOD_DELETED=0"
+set "MOD_SKIPPED=0"
+set "MOD_FILES=0"
+for %%T in (
+    "%LOCALAPPDATA%\NVIDIA\DXCache"
+    "%LOCALAPPDATA%\NVIDIA\GLCache"
+    "%LOCALAPPDATA%\NVIDIA Corporation\NV_Cache"
+    "%LOCALAPPDATA%\D3DSCache"
+) do call :CountAndTally "%%~T"
+echo   Preview: about %MOD_FILES% cache files found.
+if "%MOD_FILES%"=="0" (
+    echo   Nothing to clean.
+    call :Log INFO "GPU Cleanup: no eligible files."
+    exit /b 0
+)
+echo.
+call :Confirm "Delete GPU shader cache files now?"
+if not "%CONFIRMED%"=="1" (
+    echo   Cancelled. Nothing was deleted.
+    call :Log INFO "GPU Cleanup: CANCELLED."
+    exit /b 0
+)
+echo.
+echo   Cleaning...
+for %%T in (
+    "%LOCALAPPDATA%\NVIDIA\DXCache"
+    "%LOCALAPPDATA%\NVIDIA\GLCache"
+    "%LOCALAPPDATA%\NVIDIA Corporation\NV_Cache"
+    "%LOCALAPPDATA%\D3DSCache"
+) do call :DelAndTally "%%~T" "%LOCALAPPDATA%"
+echo.
+echo   --- GPU Cleanup summary ---
+echo   Deleted: %MOD_DELETED% files
+echo   Skipped: %MOD_SKIPPED% files (locked/in-use)
+call :Log INFO "GPU Cleanup finished: deleted=%MOD_DELETED% skipped=%MOD_SKIPPED%"
+exit /b 0
+
+
+rem ----- [12] BROWSER CLEANUP --------------------------
+:BrowserCleanup
+cls
+echo ========================================================
+echo   Browser Cache Cleanup (cache only - opt-in)
+echo ========================================================
+echo.
+echo   Removes ONLY cache folders (Cache, Code Cache, GPUCache,
+echo   Firefox cache2). Bookmarks, passwords, cookies, history,
+echo   sessions, and profiles are NEVER touched.
+echo   Please close your browsers first for a complete clean.
+echo.
+call :CleanChromium "%LOCALAPPDATA%\Google\Chrome\User Data" "Google Chrome" "chrome.exe"
+call :CleanChromium "%LOCALAPPDATA%\Microsoft\Edge\User Data" "Microsoft Edge" "msedge.exe"
+call :CleanFirefox
+exit /b 0
+
+:CleanChromium
+rem %1 = User Data root, %2 = display name, %3 = process image name.
+echo.
+echo   -- %~2 --
+if not exist "%~1" (
+    echo   Not installed.
+    exit /b 0
+)
+call :ProcRunning "%~3"
+if "%PROC_RUNNING%"=="1" echo   WARNING: %~2 is running; some cache files will be locked.
+set "MOD_DELETED=0"
+set "MOD_SKIPPED=0"
+set "MOD_FILES=0"
+for /d %%P in ("%~1\*") do (
+    call :CountAndTally "%%~P\Cache"
+    call :CountAndTally "%%~P\Code Cache"
+    call :CountAndTally "%%~P\GPUCache"
+)
+echo   Preview: about %MOD_FILES% cache files across detected profiles.
+if "%MOD_FILES%"=="0" (
+    echo   Nothing to clean.
+    exit /b 0
+)
+call :Confirm "Clear %~2 cache now?"
+if not "%CONFIRMED%"=="1" (
+    echo   Skipped %~2.
+    call :Log INFO "Browser Cleanup: %~2 CANCELLED."
+    exit /b 0
+)
+for /d %%P in ("%~1\*") do (
+    call :DelAndTally "%%~P\Cache" "%~1"
+    call :DelAndTally "%%~P\Code Cache" "%~1"
+    call :DelAndTally "%%~P\GPUCache" "%~1"
+)
+echo   %~2: deleted %MOD_DELETED% files, skipped %MOD_SKIPPED%.
+call :Log INFO "Browser Cleanup: %~2 deleted=%MOD_DELETED% skipped=%MOD_SKIPPED%"
+exit /b 0
+
+:CleanFirefox
+echo.
+echo   -- Mozilla Firefox --
+set "FFROOT=%LOCALAPPDATA%\Mozilla\Firefox\Profiles"
+if not exist "%FFROOT%" (
+    echo   Not installed.
+    exit /b 0
+)
+call :ProcRunning "firefox.exe"
+if "%PROC_RUNNING%"=="1" echo   WARNING: Firefox is running; some cache files will be locked.
+set "MOD_DELETED=0"
+set "MOD_SKIPPED=0"
+set "MOD_FILES=0"
+for /d %%P in ("%FFROOT%\*") do call :CountAndTally "%%~P\cache2"
+echo   Preview: about %MOD_FILES% cache files across detected profiles.
+if "%MOD_FILES%"=="0" (
+    echo   Nothing to clean.
+    exit /b 0
+)
+call :Confirm "Clear Firefox cache now?"
+if not "%CONFIRMED%"=="1" (
+    echo   Skipped Firefox.
+    call :Log INFO "Browser Cleanup: Firefox CANCELLED."
+    exit /b 0
+)
+for /d %%P in ("%FFROOT%\*") do call :DelAndTally "%%~P\cache2" "%FFROOT%"
+echo   Firefox: deleted %MOD_DELETED% files, skipped %MOD_SKIPPED%.
+call :Log INFO "Browser Cleanup: Firefox deleted=%MOD_DELETED% skipped=%MOD_SKIPPED%"
+exit /b 0
+
+
+rem ----- [13] DEVELOPER CLEANUP ------------------------
+:DeveloperCleanup
+cls
+echo ========================================================
+echo   Developer Cache Cleanup (opt-in, native tools)
+echo ========================================================
+echo.
+echo   Uses each tool's OWN cache command. It never deletes
+echo   source code, virtual environments, node_modules, build
+echo   outputs, or project folders. Each action is confirmed.
+echo.
+set "DEV_FOUND=0"
+where npm >nul 2>&1
+if not errorlevel 1 call :RunDevCmd "npm" "npm cache clean --force"
+where pip >nul 2>&1
+if not errorlevel 1 call :RunDevCmd "pip" "pip cache purge"
+if "%DEV_FOUND%"=="0" echo   No supported developer tools (npm, pip) were detected.
+echo.
+echo   Note: __pycache__ and per-project caches are not cleaned
+echo   automatically in this build (out of scope for safety).
+exit /b 0
+
+:RunDevCmd
+rem %1 = tool label, %2 = exact command to run (quoted).
+set "DEV_FOUND=1"
+echo.
+echo   %~1 detected. Command to run:
+echo       %~2
+call :Confirm "Run this %~1 cleanup command?"
+if not "%CONFIRMED%"=="1" (
+    echo   Skipped %~1.
+    call :Log INFO "Developer Cleanup: %~1 CANCELLED."
+    exit /b 0
+)
+call :Log INFO "Developer Cleanup: running '%~2'"
+cmd /c %~2
+if errorlevel 1 (
+    echo   %~1 reported an error (exit code %errorlevel%).
+    call :Log ERROR "Developer Cleanup: %~1 exited non-zero."
+) else (
+    echo   %~1 cache cleaned.
+    call :Log OK "Developer Cleanup: %~1 completed."
+)
+exit /b 0
+
+
+rem ----- [10] WINDOWS CLEANUP --------------------------
+:WindowsCleanup
+cls
+echo ========================================================
+echo   Windows Cleanup - Update download cache
+echo ========================================================
+echo.
+echo   Clears leftover Windows Update download files under:
+echo     %SystemRoot%\SoftwareDistribution\Download
+echo   It does NOT delete SoftwareDistribution itself, stop any
+echo   service, or touch WinSxS, System32, Installer, or
+echo   DriverStore. Files in use are skipped.
+echo.
+if /i not "%IS_ADMIN%"=="Yes" (
+    echo   This module needs administrator rights. Re-run
+    echo   PurgeKing as administrator to use it.
+    call :Log SKIP "Windows Cleanup: not elevated; skipped."
+    exit /b 0
+)
+call :CleanWUCache
+exit /b 0
+
+:CleanWUCache
+rem Purpose-built for one hardcoded, protected-area path. The generic
+rem safe-delete refuses anything under %SystemRoot% by design, so this
+rem routine does its own focused validation for this exact target only.
+if not defined SystemRoot (
+    echo   SystemRoot is not set; aborting.
+    call :Log ERROR "Windows Cleanup: SystemRoot undefined."
+    exit /b 1
+)
+set "WU=%SystemRoot%\SoftwareDistribution\Download"
+rem Sanity: the resolved path must end with the exact expected suffix.
+if /i not "%WU:~-29%"=="SoftwareDistribution\Download" (
+    echo   Unexpected target path; aborting for safety.
+    call :Log ERROR "Windows Cleanup: path sanity check failed: %WU%"
+    exit /b 1
+)
+if not exist "%WU%\" (
+    echo   Download cache folder not present; nothing to clean.
+    call :Log SKIP "Windows Cleanup: %WU% missing."
+    exit /b 0
+)
+call :TreeHasReparse "%WU%"
+if "%TREE_REPARSE%"=="1" (
+    echo   A junction/symlink was found in the cache; skipping for safety.
+    call :Log SKIP "Windows Cleanup: reparse point under %WU%; skipped."
+    exit /b 0
+)
+call :CountFiles "%WU%"
+echo   Preview: about %CF_COUNT% files in the download cache.
+if "%CF_COUNT%"=="0" (
+    echo   Nothing to clean.
+    exit /b 0
+)
+echo.
+call :Confirm "Delete Windows Update download cache files now?"
+if not "%CONFIRMED%"=="1" (
+    echo   Cancelled. Nothing was deleted.
+    call :Log INFO "Windows Cleanup: CANCELLED."
+    exit /b 0
+)
+echo.
+echo   Cleaning...
+set "WU_BEFORE=%CF_COUNT%"
+del /f /s /q "%WU%\*" >nul 2>&1
+for /d %%D in ("%WU%\*") do rd /s /q "%%~fD" >nul 2>&1
+call :CountFiles "%WU%"
+set /a WU_DELETED=%WU_BEFORE% - %CF_COUNT%
+if %WU_DELETED% lss 0 set "WU_DELETED=0"
+echo.
+echo   --- Windows Cleanup summary ---
+echo   Deleted: %WU_DELETED% files
+echo   Skipped: %CF_COUNT% files (locked - Windows Update may be active)
+if %CF_COUNT% gtr 0 echo   Some files were in use. Try again later after Windows Update finishes.
+call :Log INFO "Windows Cleanup finished: deleted=%WU_DELETED% skipped=%CF_COUNT%"
 exit /b 0
 
 

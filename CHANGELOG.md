@@ -3,6 +3,32 @@
 All notable changes to PurgeKing are documented here. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-11-01
+
+Phase 4 — specialized cleanup modules. All route through the existing
+safety framework (or, for the admin-gated Windows target, a purpose-built
+routine with equivalent checks).
+
+### Added
+- **Windows Cleanup** `[3]` / `/windows` — Windows Update download-cache cleanup
+  (`SoftwareDistribution\Download` contents only). Requires admin; hardcoded path
+  with suffix sanity check, reparse-point check, and locked-file skipping. Never
+  stops services or touches `SoftwareDistribution` itself, `WinSxS`, `System32`,
+  `Installer`, or `DriverStore`.
+- **NVIDIA / GPU Cleanup** `[4]` / `/gpu` — NVIDIA `DXCache`/`GLCache`/`NV_Cache`
+  and Windows `D3DSCache` shader caches. Driver untouched; rebuild warning shown.
+- **Browser Cleanup** `[5]` / `/browser` — cache-only cleanup (`Cache`, `Code Cache`,
+  `GPUCache`, Firefox `cache2`) across detected Chrome/Edge/Firefox profiles.
+  Running-process detection via `tasklist`; opt-in per browser. Profiles, bookmarks,
+  passwords, cookies, and history never touched.
+- **Developer Cleanup** `[6]` / `/python` — `npm cache clean --force` and
+  `pip cache purge` for detected tools, each confirmed with the exact command shown.
+- Shared helpers: `:DelAndTally`, `:CountAndTally`, `:ProcRunning`.
+- CLI switches `/windows`, `/gpu`, `/browser`, `/python` are now active.
+
+### Still planned
+- Deep Cleanup `[2]` and Run Everything `[9]` presets (Phase 5).
+
 ## [1.0.0] — 2026-10-31
 
 First public release. Application shell, complete safety framework, and the
